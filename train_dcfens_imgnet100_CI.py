@@ -156,7 +156,7 @@ def get_optimizer(model, task_id):
     parameters_branch = dict((model.branch_list[task_id]).named_parameters())
     parameters_branch_head = dict((model.heads[task_id]).named_parameters())
 
-    ## conv bases & conv-1 weight & batchnorm w, b
+    ## feat params
     parameters = [v for k, v in parameters_branch.items() if not ('coef' in k)]
     train_keys = [k for k, v in parameters_branch.items() if not ('coef' in k)]
     ## head parameters
