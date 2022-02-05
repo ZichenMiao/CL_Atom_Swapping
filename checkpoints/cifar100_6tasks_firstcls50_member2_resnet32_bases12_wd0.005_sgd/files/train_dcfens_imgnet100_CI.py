@@ -18,7 +18,7 @@ import argparse
 from torch.optim.lr_scheduler import MultiStepLR
 torch.set_printoptions(precision=5,sci_mode=False)
 
-from utils import logmeanexp
+from models.resnet18_dcf_bsensemble_imgnet import Net
 import incremental_dataloader as data
 from utils import *
 from models.Conv_DCFE import *
@@ -30,6 +30,7 @@ parser.add_argument('--num_class', default=100, type=int)
 parser.add_argument('--num_task', default=6, type=int, choices=[6, 11])
 parser.add_argument('--first_task_cls', default=10, type=int)
 parser.add_argument('--dataset', default='imagenet100')
+parser.add_argument('--list_used', default='f100')
 
 parser.add_argument('--train_batch', default=128, type=int)
 parser.add_argument('--test_batch', default=500, type=int)
@@ -37,7 +38,6 @@ parser.add_argument('--workers', default=8, type=int)
 parser.add_argument('--random_classes', action='store_true')
 parser.add_argument('--validation', type=float, default=0.0)
 parser.add_argument('--overflow', action='store_true')
-parser.add_argument('--model')
 
 parser.add_argument('--lr', type=float, default=0.01)
 parser.add_argument('--lr_sub', type=float, default=0.01, help='used after the 1st task')
@@ -62,11 +62,10 @@ args = parser.parse_args()
 
 ## task per class
 args.class_per_task = int(args.num_class // args.num_task)
-
-from models.resnet32_dcf_bsensemble import Net
+args.model = 'resnet18'
 
 log_path = 'checkpoints'
-exp_name = f'{args.dataset}_{args.num_task}tasks_firstcls{args.first_task_cls}_member{args.num_member}_{args.model}_bases{args.num_bases}_wd{args.wd}_{args.optim}'
+exp_name = f'imagenet100_{args.num_task}tasks_firstcls{args.first_task_cls}_member{args.num_member}_{args.model}_bases{args.num_bases}_wd{args.wd}_{args.optim}'
 exp_name += f'_{args.add_description}' if args.add_description else ''
 args.model_path = os.path.join(log_path, exp_name)
 os.makedirs(args.model_path, exist_ok=True)
@@ -77,8 +76,7 @@ os.makedirs(file_dir, exist_ok=True)
 os.system(f'cp -r models/ idatasets/ *.py *.sh {file_dir}')
 
 os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
-set_seed(521)
-
+set_seed(3473)
 
 ## logger, copy stdout to a file
 from logger import FileOutputDuplicator
@@ -87,7 +85,6 @@ sys.stdout = FileOutputDuplicator(sys.stdout, os.path.join(args.model_path, 'log
 print('Args:')
 print(args)
 print()
-# print('seed: ', seed)
 
 
 def train(train_loader, epoch, task, model, total_epoch):
@@ -102,35 +99,33 @@ def train(train_loader, epoch, task, model, total_epoch):
     train_loss = 0
     correct = 0
     total = 0
-    # targets_all = []
 
     previous_cls = sum(class_increments[:task])
     for batch_idx, (inputs, targets) in enumerate(train_loader):
+        # pdb.set_trace()
         inputs, targets = inputs.cuda(), targets.cuda()
         targets=targets-previous_cls # assume sequential split for random  split mapping should me changed
         optimizer.zero_grad()
+    
         
-        ## outputs with shape [bs*num_member, num_cls], same
-        bs = inputs.shape[0]
-        outputs, feat_current = model(torch.cat([inputs] * args.num_member, dim=0), task_id=task)
-        outputs = outputs.split(bs)
-        # targets_all.append(targets)
-        loss = torch.sum(torch.stack([criterion(outputs_, targets) for outputs_ in outputs], dim=0), dim=0)
-        
+        outputs,feat_current = model(inputs, task_id=task)
+        loss = criterion(outputs, targets)
+
         loss.backward()
         
+        ## clip gradient norm
+        torch.nn.utils.clip_grad.clip_grad_norm_(model.parameters(), 5.0)
+
         optimizer.step()
 
         train_loss += loss.item()
 
-        _, predicted = outputs[0].max(1)
-        # _, predicted = outputs.max(1)
+        # _, predicted = outputs[0].max(1)
+        _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
         acc = 100.*correct/total
     
-    targets_all = torch.cat(targets_all)
-    # print(torch.max(targets_all), torch.min(targets_all), targets_all.shape[0])
     print("[Train: ], [%d/%d: ], [Accuracy: %.2f], [Loss: %f], [Lr: %f]" 
           %(epoch, total_epoch, acc, train_loss/batch_idx, optimizer.param_groups[0]['lr']))
 
@@ -156,11 +151,12 @@ def get_optimizer(model, task_id):
     """
         train all parameters, or train atoms+heads only
     """
+    # pdb.set_trace()
 
     parameters_branch = dict((model.branch_list[task_id]).named_parameters())
     parameters_branch_head = dict((model.heads[task_id]).named_parameters())
 
-    ## new feat params
+    ## feat params
     parameters = [v for k, v in parameters_branch.items() if not ('coef' in k)]
     train_keys = [k for k, v in parameters_branch.items() if not ('coef' in k)]
     ## head parameters
@@ -194,6 +190,7 @@ def get_optimizer(model, task_id):
         raise NotImplementedError('...')
 
     return optimizer
+
 
 def check_task(task, inputs, model, total_task='all'):
     """
@@ -253,13 +250,12 @@ def test(test_loader, task, model):
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             inputs, targets1 = inputs.cuda(), targets.cuda()
-            targets = targets1-previous_cls
+            targets=targets1-previous_cls
             bs = inputs.shape[0]
             if task>0:
                 ## for task_id > 0, get
                 correct_sample, Ncorrect, _ = check_task(task, inputs, model)
                 tcorrect += Ncorrect
-
             
             ## inference forward
             if inputs.shape[0]!=0:
@@ -324,7 +320,6 @@ def inferecne(test_loader, task, total_task, model):
             ### task id cls. 
             correct_sample, Ncorrect, _ = check_task(task, inputs, model, total_task)
             tcorrect += Ncorrect
-
                 
             if inputs.shape[0]!=0:
                 ## single branch forward, with shape [bs*num_member, cls_per_task]
@@ -357,7 +352,7 @@ def inferecne(test_loader, task, total_task, model):
     # print("[Test CI Acc.: %.2f], [TI Acc.: %.2f] [Loss: %f] [Correct: %f]" %(acc_ci, acc_ti, 
     #                     test_loss/batch_idx, taskC))
     
-    return correct_ci, total, tcorrect
+    return correct_ci, total, tcorrect, acc_ti
 
 
 
@@ -381,7 +376,6 @@ for i in range(args.num_task):
     task_info, train_loader, val_loader, test_loader = inc_dataset.new_task()
 
     task_data.append([train_loader, test_loader])
-# pdb.set_trace()
 
 class_increments = inc_dataset.increments
 
@@ -399,12 +393,10 @@ if args.start_from > 0:
 ###############################################
 
 ci_acc_list=[]
-
-## Loss
 criterion = nn.CrossEntropyLoss()
 
 for task in range(args.start_from, args.num_task):
-
+    
     ### My version of training/ testing a task
     best_acc = 0
     print('Training Task :---'+str(task))
@@ -418,7 +410,7 @@ for task in range(args.start_from, args.num_task):
     #  init model with previous task's params
     if task > 0 and args.init_with_pre:
         copy_head = class_increments[task] == class_increments[task-1]
-        load_past(args, task, net, copy_first=False, copy_head=False)
+        load_past(args, task, net, copy_first=False, copy_head=copy_head)
 
     ## get optimizer
     optimizer = get_optimizer(net, task)
@@ -426,12 +418,12 @@ for task in range(args.start_from, args.num_task):
         schedule = args.lr_schedule
         schedule = [int(s) for s in schedule.split('-')]
         print('LR Drop Schedule: ', schedule)
-        schedulerG = MultiStepLR(optimizer, milestones=schedule, gamma=0.1)
+        schedulerG = MultiStepLR(optimizer, milestones=schedule,gamma=0.1)
     else:
         schedule = args.lr_schedule_sub
         schedule = [int(s) for s in schedule.split('-')]
         print('LR Drop Schedule: ', schedule)
-        schedulerG = MultiStepLR(optimizer, milestones=schedule, gamma=0.1)
+        schedulerG = MultiStepLR(optimizer, milestones=schedule,gamma=0.1)
 
     ## train-test 
     total_epoch = args.total_epoch if task == 0 else args.total_epoch_sub
@@ -449,28 +441,29 @@ for task in range(args.start_from, args.num_task):
     correct_cis = 0
     totals = 0
     task_pred_cors = 0
+    acc_ti_list = []
 
     num_task_ = task + 1
     for task in range(num_task_):
         # print('Testing Task :---'+str(task))
         test_loader = task_data[task][1]
-        correct_ci, total, task_pred_cor = inferecne(test_loader, task, num_task_, net)
+        correct_ci, total, task_pred_cor, acc_ti = inferecne(test_loader, task, num_task_, net)
         
         correct_cis += correct_ci
         totals += total
         task_pred_cors += task_pred_cor.item()
+        acc_ti_list.append(acc_ti)
 
     # pdb.set_trace()
     task_acc_ = correct_cis / totals * 100.
     task_pred_acc_ = task_pred_cors / totals * 100.
+    task_acc_ti = np.mean(acc_ti_list)
 
     ## report CI acc. and task-id acc.
     ci_acc_list.append(task_acc_)
     print('Total tasks: {}, CIL Acc: {:.2f}, Task-id Cls. Acc.:  {:.2f}'.format(num_task_, task_acc_, task_pred_acc_))
 
 
-
+print()
 print(ci_acc_list)
-print('Average Incremental Accuracy: {:.2f}'.format(np.mean(ci_acc_list)))
-
-
+print('\n For Class-Incremental Learning, Average Incremental Accuracy: {:.2f}'.format(np.mean(ci_acc_list)))
