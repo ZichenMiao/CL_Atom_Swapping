@@ -412,7 +412,7 @@ for task in range(args.start_from, args.num_task):
     ## dataloaders
     train_loader, test_loader = task_data[task][0],task_data[task][1]
     ## add a new network branch
-    net.add_branch(class_increments[task], task)
+    net.add_branch(class_increments[task])
     net.cuda()
 
     #  init model with previous task's params
