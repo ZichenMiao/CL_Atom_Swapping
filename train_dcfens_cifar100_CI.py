@@ -102,7 +102,7 @@ def train(train_loader, epoch, task, model, total_epoch):
     train_loss = 0
     correct = 0
     total = 0
-    # targets_all = []
+    targets_all = []
 
     previous_cls = sum(class_increments[:task])
     for batch_idx, (inputs, targets) in enumerate(train_loader):
@@ -114,7 +114,7 @@ def train(train_loader, epoch, task, model, total_epoch):
         bs = inputs.shape[0]
         outputs, feat_current = model(torch.cat([inputs] * args.num_member, dim=0), task_id=task)
         outputs = outputs.split(bs)
-        # targets_all.append(targets)
+        targets_all.append(targets)
         loss = torch.sum(torch.stack([criterion(outputs_, targets) for outputs_ in outputs], dim=0), dim=0)
         
         loss.backward()
