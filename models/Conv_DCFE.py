@@ -96,7 +96,7 @@ class Conv_DCFDE(nn.Module):
 
 ###
 ### The below lines are commented out because unless Conv_DCFDE doesn't get initiated with coef instance variable, it will return
-### an error at line #68 because they aren't defined. coef variables are alpha in the paper: See fig 1. Page no - 2.
+### an error at line #68 because they aren't defined. coef variables are D in the paper: See fig 1. Page no - 2.
 ###
 #if __name__ == '__main__':
 #    layer = Conv_DCFDE(1, 3, kernel_size=3, padding=1, stride=2).cuda()
