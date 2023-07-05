@@ -112,7 +112,7 @@ class ResNet(nn.Module):
             self.coeff_list = coeff_list
         
 
-    def add_branch(self, num_outputs, block_expand=0):
+    def add_branch(self, num_outputs):
         """
           add a set of new modules that form another branch
         """
