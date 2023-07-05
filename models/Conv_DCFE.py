@@ -94,12 +94,15 @@ class Conv_DCFDE(nn.Module):
             ', bases_grad={bases_grad}, mode={mode}, in_channels={in_channels}, out_channels={out_channels}'.format(**self.__dict__)
 
 
-
-if __name__ == '__main__':
-    layer = Conv_DCFDE(1, 3, kernel_size=3, padding=1, stride=2).cuda()
-    # layer = nn.Conv2d(3, 10, kernel_size=3, padding=1, stride=2).cuda()
-    data = torch.randn(1 , 1, 4, 4).cuda()
-    print(layer(data))
-    print(layer(data))
+###
+### The below lines are commented out because unless Conv_DCFDE doesn't get initiated with coef instance variable, it will return
+### an error at line #68 because they aren't defined. coef variables are D in the paper: See fig 1. Page no - 2.
+###
+#if __name__ == '__main__':
+#    layer = Conv_DCFDE(1, 3, kernel_size=3, padding=1, stride=2).cuda()
+#    # layer = nn.Conv2d(3, 10, kernel_size=3, padding=1, stride=2).cuda()
+#    data = torch.randn(1 , 1, 4, 4).cuda()
+#    print(layer(data))
+#    print(layer(data))
 
 
