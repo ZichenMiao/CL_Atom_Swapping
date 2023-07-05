@@ -103,7 +103,7 @@ class ResNet(nn.Module):
         for pm in self.coeff_list:
             nn.init.kaiming_normal_(pm)
 
-    def add_branch(self, num_outputs, block_expand=0):
+    def add_branch(self, num_outputs):
         """
           add a set of new modules that form another branch
         """
